@@ -1,2 +1,6 @@
 .DS_Store
 **/.DS_Store
+
+# Локални пароли и WiFi данни – не се качват в GitHub
+includes/esp32/wifi_secrets.h
+**/wifi_secrets.h

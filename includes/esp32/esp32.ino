@@ -21,18 +21,11 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
+#include "wifi_secrets.h"
 
 // ===================== WiFi настройки =====================
-// Добавете до 3 Wi-Fi мрежи - ESP32 ще се свързва с най-силната налична
-// Ако основната отпадне, автоматично ще превключи на следващата
-#define WIFI_SSID_1      "FITNESS CENTER GRACE"
-#define WIFI_PASSWORD_1  "Va666777"
-
-#define WIFI_SSID_2      ""           // Втора мрежа (оставете празно ако няма)
-#define WIFI_PASSWORD_2  ""
-
-#define WIFI_SSID_3      "Ruter"              // Трета мрежа (оставете празно ако няма)
-#define WIFI_PASSWORD_3  "0883308083"
+// Паролите са в локалния wifi_secrets.h и не се качват в GitHub.
+// При нов clone копирай wifi_secrets.h.example -> wifi_secrets.h
 
 WiFiMulti wifiMulti;
 
