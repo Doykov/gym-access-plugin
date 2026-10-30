@@ -21,11 +21,18 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Update.h>
-#include "wifi_secrets.h"
 
 // ===================== WiFi настройки =====================
-// Паролите са в локалния wifi_secrets.h и не се качват в GitHub.
-// При нов clone копирай wifi_secrets.h.example -> wifi_secrets.h
+// Добавете до 3 Wi-Fi мрежи - ESP32 ще се свързва с най-силната налична
+// Ако основната отпадне, автоматично ще превключи на следващата
+#define WIFI_SSID_1      "FITNESS CENTER GRACE"
+#define WIFI_PASSWORD_1  ""
+
+#define WIFI_SSID_2      ""           // Втора мрежа (оставете празно ако няма)
+#define WIFI_PASSWORD_2  ""
+
+#define WIFI_SSID_3      "Ruter"              // Трета мрежа (оставете празно ако няма)
+#define WIFI_PASSWORD_3  ""
 
 WiFiMulti wifiMulti;
 
@@ -33,7 +40,7 @@ WiFiMulti wifiMulti;
 const char* API_BASE_URL   = "https://grace-fitness.eu/wp-json/gym/v1";
 
 // Текуща версия на firmware-a (актуализирай при нов build)
-const char* CURRENT_FIRMWARE_VERSION = "1.0.6";
+const char* CURRENT_FIRMWARE_VERSION = "1.0.8";
 
 WiFiClientSecure secureClient;
 WebServer server(80);
@@ -84,6 +91,7 @@ struct LocalCard {
   String valid_until;   // Крайна дата (текстов вид от сървъра)
   int    max_visits;    // Лимит на посещения (0 = неограничено)
   int    visits_count;  // Текущ брой посещения
+  String last_visit;    // Последно успешно посещение (от сървъра / локално)
 };
 
 constexpr size_t MAX_LOCAL_CARDS = 1024;
@@ -97,6 +105,7 @@ const unsigned long CARDS_SYNC_INTERVAL_MS = 2UL * 60UL * 1000UL;  // 2 мину
 String lastCardsSyncStatus = "няма синхронизация";
 String lastCardsSyncTime   = "";
 int    lastCardsSyncCount  = 0;
+bool   oneVisitPerDay      = false;
 
 // ===================== OTA статус ====================
 
@@ -431,12 +440,14 @@ void syncCards() {
     lc.valid_until = String((const char *)(c["valid_until"] | ""));
     lc.max_visits  = (int)(c["max_visits"] | 0);
     lc.visits_count = (int)(c["visits_count"] | 0);
+    lc.last_visit   = String((const char *)(c["last_visit"] | ""));
   }
 
   lastCardsSyncMillis = millis();
   lastCardsSyncTime   = String((const char *)(doc["server_time"] | ""));
   lastCardsSyncCount  = (int)localCardCount;
   lastCardsSyncStatus = "ok";
+  oneVisitPerDay      = doc["one_visit_per_day"] | false;
 
   Serial.print("Синхронизирани карти: ");
   Serial.println(localCardCount);
@@ -648,6 +659,10 @@ void handleRoot() {
 
   html += F("<tr><th>Последна синхронизация</th><td>");
   html += lastCardsSyncTime.length() ? lastCardsSyncTime : "—";
+  html += F("</td></tr>");
+
+  html += F("<tr><th>Едно посещение на ден</th><td>");
+  html += oneVisitPerDay ? "включено" : "изключено";
   html += F("</td></tr>");
 
   html += F("<tr><th>Брой карти</th><td>");
@@ -973,6 +988,19 @@ bool checkAccessFast(const String& cardId, String &reason) {
       return false;
     }
 
+    bool visitedToday = false;
+    if (lc->last_visit == "USED_TODAY") {
+      visitedToday = true;
+    } else if (oneVisitPerDay && lastCardsSyncTime.length() >= 10 && lc->last_visit.length() >= 10) {
+      visitedToday = lc->last_visit.substring(0, 10) == lastCardsSyncTime.substring(0, 10);
+    }
+    if (oneVisitPerDay && visitedToday) {
+      reason = "daily_limit_reached";
+      dbg_lastAccessGranted = false;
+      dbg_lastReason        = reason;
+      return false;
+    }
+
     // /cards връща само активни и валидни карти (по дати),
     // затова тук приемаме, че останалите условия са изпълнени.
     reason = "ok_local";
@@ -1086,10 +1114,15 @@ void processPendingRemoteOps() {
     int serverVisits = -1;
     if (registerVisitRemote(cardId, serverReason, &serverVisits)) {
       LocalCard* lc = findLocalCardByRfid(cardId);
-      if (lc && lc->max_visits > 0 && serverVisits >= 0) {
-        lc->visits_count = serverVisits;
-        updateClientDisplay(true, "ok_local", lc);
-        flushClientRequests();
+      if (lc) {
+        if (oneVisitPerDay) {
+          lc->last_visit = lastCardsSyncTime.length() >= 10 ? lastCardsSyncTime : String("USED_TODAY");
+        }
+        if (lc->max_visits > 0 && serverVisits >= 0) {
+          lc->visits_count = serverVisits;
+          updateClientDisplay(true, "ok_local", lc);
+          flushClientRequests();
+        }
       }
     }
   }
@@ -1203,6 +1236,9 @@ void loop() {
         flushClientRequests();
 
         if (access) {
+          if (oneVisitPerDay && lc) {
+            lc->last_visit = lastCardsSyncTime.length() >= 10 ? lastCardsSyncTime : String("USED_TODAY");
+          }
           allowAccess();
           pendingVisitLog = true;
           pendingVisitCardId = cardId;

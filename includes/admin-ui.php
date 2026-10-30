@@ -1,6 +1,24 @@
 <?php
 defined('ABSPATH') || exit;
 
+/**
+ * WordPress по подразбиране блокира .bin. Разрешаваме го само за OTA firmware.
+ */
+function gym_access_allow_bin_mime($mimes) {
+    $mimes['bin'] = 'application/octet-stream';
+    return $mimes;
+}
+
+function gym_access_allow_bin_filetype($data, $file, $filename, $mimes) {
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    if ($ext === 'bin') {
+        $data['ext']  = 'bin';
+        $data['type'] = 'application/octet-stream';
+        $data['proper_filename'] = $filename;
+    }
+    return $data;
+}
+
 add_action('admin_menu', function () {
     add_menu_page(
         'Fitness Access',
@@ -800,7 +818,19 @@ add_action('admin_init', function () {
                 exit;
             }
             
-            $uploaded = wp_handle_upload($file, ['test_form' => false]);
+            add_filter('upload_mimes', 'gym_access_allow_bin_mime');
+            add_filter('wp_check_filetype_and_ext', 'gym_access_allow_bin_filetype', 10, 4);
+
+            $uploaded = wp_handle_upload($file, [
+                'test_form' => false,
+                'mimes'     => [
+                    'bin' => 'application/octet-stream',
+                ],
+            ]);
+
+            remove_filter('upload_mimes', 'gym_access_allow_bin_mime');
+            remove_filter('wp_check_filetype_and_ext', 'gym_access_allow_bin_filetype', 10);
+
             if (isset($uploaded['error'])) {
                 set_transient('gym_settings_saved_' . get_current_user_id(), 'Грешка при качване на firmware: ' . $uploaded['error'], 300);
                 wp_safe_redirect(admin_url('admin.php?page=gym-access&tab=settings'));

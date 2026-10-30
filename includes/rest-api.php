@@ -36,6 +36,8 @@ add_action('rest_api_init', function () {
 function gym_get_cards(WP_REST_Request $req) {
     global $wpdb;
     $table = $wpdb->prefix . 'gym_cards';
+    $settings = get_option('gym_access_settings', []);
+    $one_visit_per_day = !empty($settings['one_visit_per_day']);
     
     // Текущо време според настройките на WordPress
     $now_mysql = current_time('mysql');
@@ -80,9 +82,10 @@ function gym_get_cards(WP_REST_Request $req) {
     );
     
     return [
-        'server_time' => $now_mysql,
-        'timezone'    => wp_timezone_string(),
-        'cards'       => $rows,
+        'server_time'         => $now_mysql,
+        'timezone'            => wp_timezone_string(),
+        'one_visit_per_day'   => $one_visit_per_day,
+        'cards'               => $rows,
     ];
 }
 
